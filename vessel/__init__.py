@@ -1,5 +1,7 @@
 import numpy as np
+import numpy.ma as ma
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
 from scipy.interpolate import interpn
 from copy import deepcopy
 
@@ -164,7 +166,7 @@ class Trace:
 
 class Vessel:
 
-    def __init__(self, R_grid, Z_grid, psi_profile, maxis, maxis_mfield_value, toroidal_mfield_profile, poloidal_mfield_profile, vessel=None, separatrix=None):
+    def __init__(self, R_grid, Z_grid, psi_profile, maxis, maxis_mfield_value, toroidal_mfield_profile, poloidal_mfield_profile, vessel_shape=None, separatrix=None):
         """_summary_
 
         Args:
@@ -173,7 +175,7 @@ class Vessel:
             maxis (tuple): position of the magnetic axis (R_maxis, Z_maxis)
             maxis_mfield_value (float): magnetic field on the magnetic axis
             toroidal_mfield_profile, poloidal_mfield_profile (numpy.ndarray): profiles of the toroidal and poloidal components of the magnetic field.
-            vessel (numpy.ndarray): camera contour, array of shape (V, 2). Defaults to None.
+            vessel_shape (numpy.ndarray): camera contour, array of shape (V, 2). Defaults to None.
             separatrix (numpy.ndarray): the boundary of the plasma cord, array of shape (S, 2). Defaults to None.
 
         Raises:
@@ -187,12 +189,14 @@ class Vessel:
         self._r = R_grid
         self._z = Z_grid
         self._separatrix = separatrix
-        self._vessel = vessel
+        self._vessel_shape = vessel_shape
         self._maxis = maxis
 
-        self._psi_profile = psi_profile
-        self._B_poloid_profile = poloidal_mfield_profile
-        self._B_toroid_profile = toroidal_mfield_profile
+        vessel_mask = ~self._create_vessel_mask()
+
+        self._psi_profile = ma.array(psi_profile, mask=vessel_mask, )
+        self._B_poloid_profile = ma.array(poloidal_mfield_profile, mask=vessel_mask, )
+        self._B_toroid_profile = ma.array(toroidal_mfield_profile, mask=vessel_mask, )
         self._B_mode = maxis_mfield_value
     
         self._traces = dict()
@@ -202,15 +206,15 @@ class Vessel:
 
     def add_antenna(self, name:str, antenna=None, direction=None, resolution=None, **trace_kwargs):
         # по дефолту антенна располагается в экваториальном сечении со стороны слабого поля
-        antenna    = antenna     if antenna     is not None else (self._vessel[:, 0].max(), self._maxis[1])
+        antenna    = antenna     if antenna     is not None else (self._vessel_shape[:, 0].max(), self._maxis[1])
         direction  = direction   if direction   is not None else self._maxis
         resolution = resolution  if resolution  is not None else len(self._r)
 
         self._check_direction_is_ok(antenna, direction)
 
         self._traces[name] = Trace(
-            self._r, self._z, self._psi_profile, 
-            self._B_toroid_profile, self._B_poloid_profile, self._B_mode,
+            self._r, self._z, self._psi_profile.data, 
+            self._B_toroid_profile.data, self._B_poloid_profile.data, self._B_mode,
             antenna, direction, resolution, **trace_kwargs
         )
         return self._traces[name]
@@ -242,7 +246,7 @@ class Vessel:
             maxis_mfield_value=eqdsk.bcentr,
             toroidal_mfield_profile=B_tor,
             poloidal_mfield_profile=B_pol,
-            vessel=np.vstack((eqdsk.rlim, eqdsk.zlim)).T / 100, 
+            vessel_shape=np.vstack((eqdsk.rlim, eqdsk.zlim)).T / 100, 
             separatrix=np.vstack((eqdsk.rbdry, eqdsk.zbdry)).T
             )            
        
@@ -279,15 +283,15 @@ class Vessel:
 
     def visualize_param_in_vessel(self, param_grid, param_name=None, draw_traces=False, fig_ax=None, **contourf_kwargs):
         # plt.ion()
-        fig, ax = plt.subplots(figsize=(5, 7)) if fig_ax is None else fig_ax
+        fig, ax = plt.subplots(figsize=(5, 7), layout='constrained') if fig_ax is None else fig_ax
             
         contour = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
         plt.colorbar(contour, spacing='proportional')
 
-        if self._vessel is not None:
+        if self._vessel_shape is not None:
             ax.plot(self._separatrix[:, 0], self._separatrix[:, 1], color="m", label="сепаратриса", linewidth=4)
         if self._separatrix is not None:
-            ax.plot(self._vessel[:, 0],    self._vessel[:, 1],    color="k", label="вакуумная камера", linewidth=4)
+            ax.plot(self._vessel_shape[:, 0],    self._vessel_shape[:, 1],    color="k", label="вакуумная камера", linewidth=4)
             
         ax.scatter(*self._maxis, marker="x", s=120, color="m")
 
@@ -306,6 +310,18 @@ class Vessel:
         return fig, ax
     
 
+    def _create_vessel_mask(self):
+
+        r, z = np.meshgrid(self._r, self._z, indexing='ij')
+        r, z = r.flatten(), z.flatten()
+        grid = np.vstack((r, z)).T
+
+        path = Path(self._vessel_shape)
+        mask = path.contains_points(grid)
+
+        return mask.reshape((len(self._r), len(self._z)))
+    
+
     def _warn_if_bad_maxis(self, R_grid, Z_grid):
         """
         Кидает варнинг, если заданная магнитная ось сильно не совпадает с минимумом полоидального потока.
@@ -318,8 +334,16 @@ class Vessel:
             warnings.warn("given magnetic axis doesn't match the axis computed with given psi_profile.",
                           category=RuntimeWarning)
             
+
     def _check_direction_is_ok(self, antenna, direction):
         view = np.array(direction) - (a := np.array(antenna))
         maxis_line = np.array(self._maxis) - a
         if view @ maxis_line <= 0:
-            raise ValueError('The beam is directed away from the magnetic axis')
+            warnings.warn('The beam is directed away from the magnetic axis')
+        
+
+if __name__ == '__main__':
+    device = Vessel.from_geqdsk("C:/Users/login/python-projects/tref/eqdsk-t15.txt")
+    device.add_antenna('eq')
+    device.visualize_param_in_vessel(device._psi_profile, draw_traces=True)
+    plt.show()
