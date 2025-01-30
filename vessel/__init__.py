@@ -283,15 +283,15 @@ class Vessel:
 
     def visualize_param_in_vessel(self, param_grid, param_name=None, draw_traces=False, fig_ax=None, **contourf_kwargs):
         # plt.ion()
-        fig, ax = plt.subplots(figsize=(5, 7), layout='constrained') if fig_ax is None else fig_ax
+        fig, ax = plt.subplots(figsize=(5, 7), tight_layout=True) if fig_ax is None else fig_ax
             
-        contour = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
-        plt.colorbar(contour, spacing='proportional')
+        contourf = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
+        plt.colorbar(contourf, spacing='proportional')
 
         if self._vessel_shape is not None:
             ax.plot(self._separatrix[:, 0], self._separatrix[:, 1], color="m", label="сепаратриса", linewidth=4)
         if self._separatrix is not None:
-            ax.plot(self._vessel_shape[:, 0],    self._vessel_shape[:, 1],    color="k", label="вакуумная камера", linewidth=4)
+            ax.plot(self._vessel_shape[:, 0],    self._vessel_shape[:, 1], color="k", label="вакуумная камера", linewidth=4)
             
         ax.scatter(*self._maxis, marker="x", s=120, color="m")
 
