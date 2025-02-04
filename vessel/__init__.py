@@ -4,19 +4,16 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from scipy.interpolate import interpn
 from copy import deepcopy
+import warnings
 
 from freeqdsk import geqdsk 
 # sourse: https://freeqdsk.readthedocs.io/en/stable/geqdsk.html 0.5.0
-
-import warnings
-warnings.filterwarnings('always')
-
 
 class Trace:
 
     def __init__(self, R_grid:np.ndarray, Z_grid:np.ndarray, psi_profile:np.ndarray, 
                  B_toroid_profile:np.ndarray, B_poloid_profile:np.ndarray, maxis_B_value:float,
-                 antenna:tuple, direction:tuple, resolution:int, need_B=True, need_angle=True, need_dist=True):
+                 begin:tuple, end:tuple, resolution:int, need_B=True, need_angle=True, need_dist=True, crop_tail=True):
         """Создаёт сечение камеры прямой линией по имеющимся двум точкам antenna и direction.
         Сечение описывается атрибутами _r, _z, _dist, _psi, _B_tor, _B_pol, _reflection_angle
 
@@ -27,18 +24,19 @@ class Trace:
             B_toroid_profile (np.ndarray): toroidal magnetic field cut distribution, grid of shape (m, n)
             B_poloid_profile (np.ndarray): poloidal magnetic field cut distribution, grid of shape (m, n)
             maxis_B_value (float): the value of magnetic field on magnetic axes ("center") of B_toroid_profile
-            antenna (tuple): antenna (R, Z) coordinates
-            direction (tuple): any (R, Z) point in the cut, defining the view of antenna
+            begin (tuple): initial point of the trace in (R, Z) coordinates
+            end (tuple): any (R, Z) point in the cut, defining the direction of trace
             resolution (int): number of point to interpolate trace on
+            crop_tail: if True, the trace will be cropped by the poloidal flux minimum
         """
-        self._antenna   = antenna
-        self._direction = direction
+        self._begin = begin
+        self._end = end
 
         R_2Dgrid, Z_2Dgrid = np.meshgrid(R_grid, Z_grid, indexing='ij')
 
         # задание луча в координатах (R, Z)                 с запасом в двое длиннее
-        self._r = np.linspace(antenna[0], 2 * direction[0] - antenna[0], 2 * resolution)
-        self._z = np.linspace(antenna[1], 2 * direction[1] - antenna[1], 2 * resolution)
+        self._r = np.linspace(begin[0], end[0], resolution)
+        self._z = np.linspace(begin[1], end[1], resolution)
 
         # проверка на выход за границы сетки: если луч выходит по какой-то координате за допустимые пределы, то строим новый луч до границы.
         inlying_part = np.argwhere(((self._r > R_2Dgrid[0, 0]) & (self._r < R_2Dgrid[-1, 0]) & (self._z > Z_2Dgrid[0, 0]) & (self._z < Z_2Dgrid[0, -1])))
@@ -47,24 +45,22 @@ class Trace:
             end_idx = np.array(inlying_part[-1]).item() # inlying_part[-1] может оказаться скаляром, а может массивом с 1 элементом
 
             if end_idx != len(self._r) - 1:
-                self._r = np.linspace(antenna[0], self._r[end_idx], resolution)
-                self._z = np.linspace(antenna[1], self._z[end_idx], resolution)
+                self._r = np.linspace(begin[0], self._r[end_idx], resolution)
+                self._z = np.linspace(begin[1], self._z[end_idx], resolution)
 
         # интерполяция двумерного распределения полоидального потока на направление зондирования
         self._psi = self._interpolate_on_trace(R_grid, Z_grid, psi_profile)
 
         # долой часть луча, идущую после минимума полоидального потока
-        end_idx = self._psi[self._psi > 0.0].argmin()
-        self._r = self._r[:end_idx]
-        self._z = self._z[:end_idx]
-        self._psi = self._psi[:end_idx]
+        if crop_tail:
+            self.crop_tail()
 
         # если появились артефакты в виде отрицательных значений, то зануляем их
         self._psi[self._psi < 0] = 0.0
 
         # задание луча в кординатах расстояния от антенны
         if need_dist:
-            self._dist = np.sqrt((self._r - antenna[0])**2 + (self._z - antenna[1])**2)
+            self._dist = np.sqrt((self._r - begin[0])**2 + (self._z - begin[1])**2)
 
         # интерполяция двумерных распределений тороидального и полоидального полей на направление зондирования
         if need_B:
@@ -102,6 +98,12 @@ class Trace:
             pass
 
         return trace
+    
+
+    def crop_tail(self, end_idx=None):
+        if end_idx is None:
+            end_idx = self._psi[self._psi > 0.0].argmin()
+        self.cut(condition=(np.arange(len(self._psi)) <= end_idx), inplace=True)
 
     
     def _interpolate_on_trace(self, R_grid, Z_grid, profile2d):
@@ -157,10 +159,10 @@ class Trace:
     @property
     def B_mode(self):   return self._B_tor_mode
     @property
-    def antenna(self): 
+    def edges(self): 
         return {
-        'antenna': self._antenna,
-        'direction': self._direction
+        'begin': self._begin,
+        'end': self._end
     }
 
 
@@ -204,20 +206,23 @@ class Vessel:
         self._warn_if_bad_maxis(R_grid, Z_grid)
 
 
-    def add_antenna(self, name:str, antenna=None, direction=None, resolution=None, **trace_kwargs):
-        # по дефолту антенна располагается в экваториальном сечении со стороны слабого поля
-        antenna    = antenna     if antenna     is not None else (self._vessel_shape[:, 0].max(), self._maxis[1])
-        direction  = direction   if direction   is not None else self._maxis
-        resolution = resolution  if resolution  is not None else len(self._r)
+    def add_antenna(self, launch=None, direction=None, resolution=None, store_as=None, **trace_kwargs):
 
-        self._check_direction_is_ok(antenna, direction)
+        # по дефолту луч строится в экваториальной плоскости со стороны слабого поля
+        launch =     launch     if launch     is not None else (self._vessel_shape[:, 0].max(), self._maxis[1])
+        direction =  direction  if direction  is not None else self._maxis
+        resolution = resolution if resolution is not None else len(self._r)
 
-        self._traces[name] = Trace(
+        self._check_direction_is_ok(launch, direction)
+
+        trace = Trace(
             self._r, self._z, self._psi_profile.data, 
             self._B_toroid_profile.data, self._B_poloid_profile.data, self._B_mode,
-            antenna, direction, resolution, **trace_kwargs
+            launch, direction, resolution, **trace_kwargs
         )
-        return self._traces[name]
+        if store_as is not None:
+            self._traces[store_as] = trace
+        return trace
     
     @classmethod
     def from_geqdsk(clf, filepath):
@@ -256,7 +261,12 @@ class Vessel:
     
     def get_trace(self, name): return self._traces[name]
     
-    def get_antenna(self, name): return self._traces[name].antenna
+    def get_antenna(self, name):
+        edges = self._traces[name].edges
+        return {
+            'antenna': edges['begin'],
+            'direction': edges['end']
+        }
 
     def get_psi(self): return self._psi_profile
 
@@ -271,6 +281,8 @@ class Vessel:
             raise ValueError("argument 'which' can be one of the following: 'full'(by default), 'tor', 'pol'")
     
     def get_maxis(self): return self._maxis
+
+    def get_coord_grids(self): return (self._r, self._z)
 
     def set_resol(self, name, new_resol): 
         
@@ -339,11 +351,13 @@ class Vessel:
         view = np.array(direction) - (a := np.array(antenna))
         maxis_line = np.array(self._maxis) - a
         if view @ maxis_line <= 0:
-            warnings.warn('The beam is directed away from the magnetic axis')
+            warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {antenna}, direction: {direction}\nmaxis: {self.get_maxis()}')
         
 
 if __name__ == '__main__':
+    
+    warnings.filterwarnings('ignore')
     device = Vessel.from_geqdsk("C:/Users/login/python-projects/tref/eqdsk-t15.txt")
-    device.add_antenna('eq')
+    device.add_antenna(store_as=0)
     device.visualize_param_in_vessel(device._psi_profile, draw_traces=True)
     plt.show()
