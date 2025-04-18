@@ -261,11 +261,11 @@ class Antenna:
             raise ValueError("Arguments 'pos', 'view', and 'maxis' must be 2D points (tuples or arrays of length 2).")
 
         self.name = name
-        self._pos = pos
-        self._view = view
+        self._pos = np.array(pos)
+        self._view = np.array(view)
         self._trace = trace
 
-        self._maxis = maxis
+        self._maxis = np.array(maxis)
 
         ex = self._pos - self._maxis
         self._rad = np.linalg.norm(ex)
@@ -436,7 +436,7 @@ class Vessel:
         """
 
         if not psi_profile.shape == b_toroid_profile.shape == b_poloid_profile.shape:
-            raise ValueError("profiles have not the same shapes")
+            raise ValueError(f"profiles have not the same shapes: {psi_profile.shape}, {b_toroid_profile.shape}, {b_poloid_profile.shape}")
         elif psi_profile.shape[0] == psi_profile.shape[1]:
             warnings.warn("grid is square. Be sure if axis 0 relates R-coordinate, axis 1 - Z-coodrinate.", RuntimeWarning)
 
@@ -656,7 +656,7 @@ class Vessel:
         return self._vessel_shape
 
 
-    def visualize_param_in_vessel(self, param_grid, param_name=None, draw_traces=False, fig_ax=None, **contourf_kwargs):
+    def visualize_param_in_vessel(self, param_grid, param_name='', draw_traces=False, fig_ax=None, **contourf_kwargs):
         """
         Visualizes a parameter grid within the vessel.
 
@@ -674,11 +674,11 @@ class Vessel:
         fig, ax = plt.subplots(figsize=(6, 7), tight_layout=True) if fig_ax is None else fig_ax
             
         contourf = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
-        cbar = plt.colorbar(contourf)
+        cbar = plt.colorbar(contourf, label=param_name)
 
-        if self._vessel_shape is not None:
-            ax.plot(self._separatrix[0], self._separatrix[1], color="m", label="Сепаратриса", linewidth=3)
         if self._separatrix is not None:
+            ax.plot(self._separatrix[0], self._separatrix[1], color="m", label="Сепаратриса", linewidth=3)
+        if self._vessel_shape is not None:
             ax.plot(self._vessel_shape[0], self._vessel_shape[1], color="k", label="Вакуумная камера", linewidth=3)
             
         ax.scatter(*self._maxis, marker="x", s=100, color="m")
@@ -686,8 +686,6 @@ class Vessel:
         ax.axis('scaled')
         ax.set_xlabel("$R$, м")
         ax.set_ylabel("$Z$, м")
-        if param_name is not None:
-            ax.set_title(param_name)
 
         traces2draw = self.list_antennae() if draw_traces is True else draw_traces
         if type(traces2draw) is not bool:
@@ -745,3 +743,17 @@ class Vessel:
         maxis_line = np.array(self._maxis) - a
         if view @ maxis_line <= 0:
             warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {antenna}, view: {view}\nmaxis: {self.get_maxis()}')
+
+
+if __name__ == "__main__":
+
+    antenna = Antenna(
+        name='test_antenna',
+        pos=(2.0, 1.0), 
+        view=(1.5, 0.0),
+        trace=None,
+        maxis=(1.5, 0.0)
+    )
+    print(np.degrees(antenna.rotated_by))
+    print(antenna.xy2rz((np.cos(np.pi / 6), np.sin(np.pi / 6))))
+    print(antenna.rz2xy((1.5, 1.0)))
