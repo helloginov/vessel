@@ -640,7 +640,7 @@ class Vessel:
         Returns the plasma separatrix.
 
         Returns:
-            np.ndarray: Coordinates of the separatrix.
+            np.ndarray: Coordinates of the separatrix, array of shape (2, N)
         """
 
         return self._separatrix
@@ -650,7 +650,7 @@ class Vessel:
         Returns the vessel boundary.
 
         Returns:
-            np.ndarray: Coordinates of the vessel boundary.
+            np.ndarray: Coordinates of the vessel boundary, array of shape (2, N)
         """
 
         return self._vessel_shape
