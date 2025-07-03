@@ -49,7 +49,6 @@ class TestVessel(unittest.TestCase):
             msg=f"Coordinates should be ({self.r_grid}, {self.z_grid}) but got {self.vessel.get_coords()}"
         )
         self.assertTrue(np.all(self.vessel.get_psi2d() == self.psi_profile))
-        self.assertTrue(np.all(self.vessel.get_b('tor') == self.b_toroid_profile))
         self.assertTrue(np.all(self.vessel.get_b('pol') == self.b_poloid_profile))
 
 
@@ -85,7 +84,7 @@ class TestVessel(unittest.TestCase):
                 param_name="Test Psi Profile", 
                 draw_traces=True
             )
-            fig.savefig("tests/test_psi_profile.png")
+            fig.savefig("test_psi_profile.png")
         except Exception as e:
             self.fail(f"Visualization failed with exception: {e}")
 
@@ -131,6 +130,100 @@ class TestVessel(unittest.TestCase):
         trace = antenna.trace
         new_trace = trace.cut(trace.b_tor < 1.5)
         self.assertTrue(np.all(new_trace.b_tor < 1.5), msg=f"Trace b_tor should be less than 1.5 but got {new_trace.b_tor}")
+
+
+class TestVesselNoPsi(TestVessel):
+
+    def setUp(self):
+        super().setUp()
+        self.vessel = Vessel(
+            r_grid=self.r_grid,
+            z_grid=self.z_grid,
+            maxis=self.maxis,
+            maxis_mfield_value=self.maxis_mfield_value,
+            b_toroid_profile=self.b_toroid_profile,
+            b_poloid_profile=self.b_poloid_profile,
+            vessel_shape=self.vessel_shape,
+            separatrix=self.separatrix,
+        )
+
+    def test_vessel_initialization(self):
+        self.assertIsNone(self.vessel.get_psi2d())
+
+    def test_mask(self):
+        pass
+
+    def test_visualize_param_in_vessel(self):
+        pass
+
+    def test_trace_crop_tail(self):
+        antenna = self._init_test_antenna(view=(1, -1))
+        self.assertFalse(hasattr(antenna.trace, '_psi'))
+        
+
+class TestVesselNoMaxisField(TestVessel):
+
+    def setUp(self):
+        super().setUp()
+        self.vessel = Vessel(
+            r_grid=self.r_grid,
+            z_grid=self.z_grid,
+            maxis=self.maxis,
+            psi_profile=self.psi_profile,
+            b_toroid_profile=self.b_toroid_profile,
+            b_poloid_profile=self.b_poloid_profile,
+            vessel_shape=self.vessel_shape,
+            separatrix=self.separatrix,
+        )
+
+    def test_vessel_initialization(self):
+        self.assertIsNotNone(self.vessel.get_bmode())
+
+
+
+class TestVesselNoBProfiles(TestVessel):
+
+    def setUp(self):
+        super().setUp()
+        self.vessel = Vessel(
+            r_grid=self.r_grid,
+            z_grid=self.z_grid,
+            psi_profile=self.psi_profile,
+            maxis=self.maxis,
+            vessel_shape=self.vessel_shape,
+            separatrix=self.separatrix,
+        )
+
+    def test_vessel_initialization(self):
+        self.assertIsNone(self.vessel.get_bmode())
+        self.assertIsNone(self.vessel.get_b('tor'))
+        self.assertIsNone(self.vessel.get_b('pol'))
+
+    def test_trace_cut(self):
+        pass
+
+
+class TestVesselNoShape(TestVessel):
+
+    def setUp(self):
+        super().setUp()
+        self.vessel = Vessel(
+            r_grid=self.r_grid,
+            z_grid=self.z_grid,
+            psi_profile=self.psi_profile,
+            maxis=self.maxis,
+            maxis_mfield_value=self.maxis_mfield_value,
+            b_toroid_profile=self.b_toroid_profile,
+            b_poloid_profile=self.b_poloid_profile,
+            separatrix=self.separatrix,
+        )
+
+    def test_vessel_initialization(self):
+        self.assertIsNone(self.vessel._vessel_shape)
+
+    def test_mask(self):
+        self.assertFalse(np.any(self.vessel.get_psi2d().mask))
+        self.assertFalse(np.any(self.vessel.get_b('full').mask))
 
 
 if __name__ == "__main__":

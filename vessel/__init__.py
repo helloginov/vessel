@@ -22,8 +22,7 @@ class Trace:
 
     The `Trace` class models a cross-section of the tokamak chamber as a straight line 
     between two points (antenna and view). It provides methods for interpolating 
-    magnetic field and poloidal flux (psi) profiles and calculating angles to magnetic surfaces
-    based on conditions.
+    magnetic field and poloidal flux (psi) profiles and calculating angles to magnetic surfaces.
 
     Attributes:
         r (np.ndarray): Radial coordinates of the trace.
@@ -33,32 +32,31 @@ class Trace:
         b_tor (np.ndarray): Toroidal magnetic field along the trace.
         b_pol (np.ndarray): Poloidal magnetic field along the trace.
         reflection_angle (np.ndarray): Reflection angle along the trace.
-        b_mode (float): Magnetic field value at the magnetic axis.
     """
 
     def __init__(
-            self, pos: tuple, view: tuple,
-            r_grid: np.ndarray, z_grid: np.ndarray, 
-            psi_profile: np.ndarray, b_toroid_profile: np.ndarray, b_poloid_profile: np.ndarray, 
-            maxis_b_value: float, resolution: int, need_b=True, need_angle=True, need_dist=True, crop_tail=True
+            self, pos: tuple[float, float], view: tuple[float, float],
+            r_grid: np.ndarray, z_grid: np.ndarray,
+            psi_profile: np.ndarray = None, b_toroid_profile: np.ndarray = None, b_poloid_profile: np.ndarray = None,
+            resolution: int = 100, need_b: bool = True, need_angle: bool = True, need_dist: bool = True, crop_tail: bool = True
         ):
         """
         Creates a cross-section of the chamber as a straight line between two points: antenna and view.
         The cross-section is described by the attributes r, z, dist, psi, b_tor, b_pol, reflection_angle.
 
         Args:
-            pos (tuple): Initial point of the trace in (R, Z) coordinates.
-            view (tuple): Any (R, Z) point in the cut, defining the view of the trace.
-            r_grid (np.ndarray): Radial coordinates of shape (n,).
-            z_grid (np.ndarray): Height coordinates of shape (m,).
-            psi_profile (np.ndarray): Poloidal magnetic flux cut distribution, grid of shape (m, n).
-            b_toroid_profile, b_toroid_profile (np.ndarray): Toroidal and poloidal magnetic field cut distribution, grids of shape (m, n).
-            maxis_b_value (float): Magnetic field value at the magnetic axis ("center"). If it does not correspond to the value in the profile, it will be used for normalization.
+            pos (tuple[float, float]): Initial point of the trace in (R, Z) coordinates.
+            view (tuple[float, float]): Any (R, Z) point in the cut, defining the view of the trace.
+            r_grid (np.ndarray): 1D array of radial coordinates.
+            z_grid (np.ndarray): 1D array of vertical coordinates.
+            psi_profile (np.ndarray, optional): 2D array of poloidal magnetic flux, shape (len(r_grid), len(z_grid)).
+            b_toroid_profile (np.ndarray, optional): 2D array of toroidal magnetic field, shape (len(r_grid), len(z_grid)).
+            b_poloid_profile (np.ndarray, optional): 2D array of poloidal magnetic field, shape (len(r_grid), len(z_grid)).
             resolution (int): Number of points to interpolate the trace on.
-            need_b (bool): If True, interpolates the magnetic field components along the trace. Defaults to True.
-            need_angle (bool): If True, calculates the reflection angle along the trace. Defaults to True.
-            need_dist (bool): If True, calculates the distance from the antenna along the trace. Defaults to True.
-            crop_tail (bool): If True, the trace will be cropped at the minimum poloidal flux. Defaults to True.
+            need_b (bool): If True, interpolates the magnetic field components along the trace.
+            need_angle (bool): If True, calculates the reflection angle along the trace.
+            need_dist (bool): If True, calculates the distance from the antenna along the trace.
+            crop_tail (bool): If True, the trace will be cropped at the minimum poloidal flux.
         """
 
         R_2Dgrid, Z_2Dgrid = np.meshgrid(r_grid, z_grid, indexing='ij')
@@ -78,14 +76,15 @@ class Trace:
                 self._z = np.linspace(pos[1], self._z[end_idx], resolution)
 
         # интерполяция двумерного распределения полоидального потока на направление зондирования
-        self._psi = self.interpolate_on_trace(r_grid, z_grid, psi_profile)
+        if psi_profile is not None:
+            self._psi = self.interpolate_on_trace(r_grid, z_grid, psi_profile)
 
-        # долой часть луча, идущую после минимума полоидального потока
-        if crop_tail:
-            self.crop_tail()
+            # долой часть луча, идущую после минимума полоидального потока
+            if crop_tail:
+                self.crop_tail()
 
-        # если появились артефакты в виде отрицательных значений, то зануляем их
-        self._psi[self._psi < 0] = 0.0
+            # если появились артефакты в виде отрицательных значений, то зануляем их
+            self._psi[self._psi < 0] = 0.0
 
         # задание луча в кординатах расстояния от антенны
         if need_dist:
@@ -93,21 +92,29 @@ class Trace:
 
         # интерполяция двумерных распределений тороидального и полоидального полей на направление зондирования
         if need_b:
-            self._b_tor = self.interpolate_on_trace(r_grid, z_grid, b_toroid_profile)
-            self._b_pol = self.interpolate_on_trace(r_grid, z_grid, b_poloid_profile)
-            self._b_tor_mode = maxis_b_value
+            if b_toroid_profile is not None:
+                self._b_tor = self.interpolate_on_trace(r_grid, z_grid, b_toroid_profile)
+            else:
+                warnings.warn("toroidal magnetic field 2D profile is not provided", category=RuntimeWarning)
+            if b_poloid_profile is not None:
+                self._b_pol = self.interpolate_on_trace(r_grid, z_grid, b_poloid_profile)
+            else:
+                warnings.warn("poloidal magnetic field 2D profile is not provided", category=RuntimeWarning)
         
         # наклон зондирующего луча к нормалям магнитных поверхностей на протяжении всей длины.
         if need_angle:
-            self._reflection_angle = self._trace_angle(r_grid, z_grid, psi_profile)
+            try:
+                self._reflection_angle = self._trace_angle(r_grid, z_grid, psi_profile)
+            except TypeError:
+                warnings.warn("poloidal magnetic flux 2D profile is not provided", category=RuntimeWarning)
 
 
-    def cut(self, condition: np.array = None, inplace=False):
+    def cut(self, condition: np.ndarray = None, inplace: bool = False):
         """
         Cuts the trace based on a given condition.
 
         Args:
-            condition (np.ndarray, optional): A boolean array indicating which points to keep. 
+            condition (np.ndarray, optional): Boolean array indicating which points to keep. 
                 Defaults to keeping points where `self.psi <= 1`.
             inplace (bool): If True, modifies the current trace in place. 
                 If False, creates and returns a new trace object. Defaults to False.
@@ -123,14 +130,17 @@ class Trace:
         
         trace._r = self._r[condition]
         trace._z = self._z[condition]
-        trace._psi = self._psi[condition]
+        try:
+            trace._psi = self._psi[condition]
+        except AttributeError:
+            pass
         try:
             trace._dist = self._dist[condition]
         except AttributeError:
             pass
         try:
-            trace._b_pol = self._b_pol[condition]
             trace._b_tor = self._b_tor[condition]
+            trace._b_pol = self._b_pol[condition]
         except AttributeError:
             pass
         try:
@@ -141,7 +151,7 @@ class Trace:
         return trace
     
 
-    def crop_tail(self, end_idx=None):
+    def crop_tail(self, end_idx: int = None):
         """
         Crops the trace by removing points after a specified index or the minimum poloidal flux.
 
@@ -149,22 +159,21 @@ class Trace:
             end_idx (int, optional): The index up to which the trace should be kept. 
                 If None, the trace is cropped at the first occurrence of the minimum poloidal flux 
                 where `self._psi > 0.0`. Defaults to None.
-
-        Returns:
-            None: Modifies the trace in place by calling the `cut` method with the appropriate condition.
         """
-        if end_idx is None:
+        if (end_idx is None) and (hasattr(self, '_psi')):
             end_idx = self._psi[self._psi > 0.0].argmin()
-        self.cut(condition=(np.arange(len(self._psi)) <= end_idx), inplace=True)
-
+        elif end_idx is None:
+            return
+        self.cut(condition=(np.arange(len(self._r)) <= end_idx), inplace=True)
+            
     
-    def interpolate_on_trace(self, r_grid, z_grid, profile2d, method="linear"):
+    def interpolate_on_trace(self, r_grid: np.ndarray, z_grid: np.ndarray, profile2d: np.ndarray, method: str = "linear") -> np.ndarray:
         """
         Interpolates a 2D profile along the trace.
 
         Args:
-            r_grid (np.ndarray): Radial grid.
-            z_grid (np.ndarray): Vertical grid.
+            r_grid (np.ndarray): 1D radial grid.
+            z_grid (np.ndarray): 1D vertical grid.
             profile2d (np.ndarray): 2D profile to interpolate.
             method (str): Interpolation method ('linear', 'nearest', 'splinef2d').
 
@@ -179,14 +188,14 @@ class Trace:
         )
 
 
-    def _trace_angle(self, r_grid: np.ndarray, z_grid: np.ndarray, psi_profile: np.ndarray):
+    def _trace_angle(self, r_grid: np.ndarray, z_grid: np.ndarray, psi_profile: np.ndarray) -> np.ndarray:
         """
         Calculates the angle between the trace and the magnetic surfaces.
 
         Args:
-            r_grid (np.ndarray): Radial 1D grid.
-            z_grid (np.ndarray): Vertical 1D grid.
-            psi_profile (np.ndarray): Poloidal magnetic flux 2D profile.
+            r_grid (np.ndarray): 1D radial grid.
+            z_grid (np.ndarray): 1D vertical grid.
+            psi_profile (np.ndarray): 2D poloidal magnetic flux profile.
 
         Returns:
             np.ndarray: Array of angles (in radians) along the trace.
@@ -221,8 +230,6 @@ class Trace:
     def b_pol(self):    return self._b_pol
     @property
     def reflection_angle(self): return self._reflection_angle
-    @property
-    def b_mode(self):   return self._b_tor_mode
 
 
 class Antenna:
@@ -242,16 +249,16 @@ class Antenna:
         rotated_by (float): Angle by which the antenna is rotated relative to the horizon.
     """
 
-    def __init__(self, name: str, pos: tuple, view: tuple, trace:Trace, maxis: tuple):
+    def __init__(self, name: str, pos: tuple[float, float], view: tuple[float, float], trace: Trace, maxis: tuple[float, float]):
         """
         Initializes an Antenna object.
 
         Args:
             name (str): The name of the antenna.
-            pos (tuple): The position of the antenna in (R, Z) coordinates.
-            view (tuple): The view direction of the antenna in (R, Z) coordinates.
+            pos (tuple[float, float]): The position of the antenna in (R, Z) coordinates.
+            view (tuple[float, float]): The view direction of the antenna in (R, Z) coordinates.
             trace (Trace): The trace object associated with the antenna.
-            maxis (tuple): The position of the magnetic axis in (R, Z) coordinates.
+            maxis (tuple[float, float]): The position of the magnetic axis in (R, Z) coordinates.
 
         Raises:
             ValueError: If `pos`, `view`, or `maxis` are not 2D points.
@@ -279,7 +286,7 @@ class Antenna:
         self._rotated_by = np.arccos(ex[0]) * np.sign(ex[1])
         
     
-    def xy2rz(self, xy):
+    def xy2rz(self, xy: np.ndarray) -> np.ndarray:
         """
         Converts Cartesian (x, y) coordinates to cylindrical (R, Z) coordinates.
 
@@ -293,7 +300,7 @@ class Antenna:
         return np.asarray(xy) @ self._trans_mx + self._maxis
 
 
-    def rz2xy(self, rz):
+    def rz2xy(self, rz: np.ndarray) -> np.ndarray:
         """
         Converts cylindrical (R, Z) coordinates to Cartesian (x, y) coordinates.
 
@@ -369,7 +376,7 @@ class Antenna:
         return self.adjust_coords(self._view, coords)
     
     
-    def adjust_coords(self, point, coords='rz'):
+    def adjust_coords(self, point, coords: str = 'rz') -> np.ndarray:
         """
         Adjusts the coordinates of a point between 'rz' and 'xy' systems.
 
@@ -412,9 +419,9 @@ class Vessel:
     """
 
     def __init__(
-            self, r_grid: np.ndarray, z_grid: np.ndarray, psi_profile: np.ndarray, 
-            maxis: tuple, maxis_mfield_value: float, 
-            b_toroid_profile: np.ndarray, b_poloid_profile: np.ndarray,
+            self, r_grid: np.ndarray, z_grid: np.ndarray, psi_profile: np.ndarray = None, 
+            maxis: tuple[float, float] = None, maxis_mfield_value: float = None, 
+            b_toroid_profile: np.ndarray = None, b_poloid_profile: np.ndarray = None,
             vessel_shape: np.ndarray = None, separatrix: np.ndarray = None
         ):
         """
@@ -435,37 +442,51 @@ class Vessel:
             RuntimeWarning: If the grid is square and the coordinate axes are ambiguous.
         """
 
-        if not psi_profile.shape == b_toroid_profile.shape == b_poloid_profile.shape:
-            raise ValueError(f"profiles have not the same shapes: {psi_profile.shape}, {b_toroid_profile.shape}, {b_poloid_profile.shape}")
-        elif psi_profile.shape[0] == psi_profile.shape[1]:
-            warnings.warn("grid is square. Be sure if axis 0 relates R-coordinate, axis 1 - Z-coodrinate.", RuntimeWarning)
-
         self._r = r_grid
         self._z = z_grid
+        
         self._separatrix = separatrix
         self._vessel_shape = vessel_shape
-        self._maxis = maxis
 
-        vessel_mask = ~self._create_vessel_mask()
+        vessel_mask = self._create_vessel_mask()
 
-        self._psi_profile = ma.array(psi_profile, mask=vessel_mask, )
-        self._b_poloid_profile = ma.array(b_poloid_profile, mask=vessel_mask, )
-        self._b_toroid_profile = ma.array(b_toroid_profile, mask=vessel_mask, )
-        self._b_mode = maxis_mfield_value
+        self._psi_profile = ma.array(psi_profile, mask=vessel_mask) if psi_profile is not None else None
+        self._b_poloid_profile = ma.array(b_poloid_profile, mask=vessel_mask) if b_poloid_profile is not None else None
+        self._b_toroid_profile = ma.array(b_toroid_profile, mask=vessel_mask) if b_toroid_profile is not None else None
+
+        self._set_maxis(maxis)
+        self._set_default_trace_edges()
+
+        if self._b_toroid_profile is not None and self._maxis is not None:
+            self._b_mode = interpn(
+                points=(self._r, self._z),
+                values=self._b_toroid_profile,
+                xi=self._maxis,
+                method='linear'
+            )
+            if maxis_mfield_value is not None:
+                self._b_toroid_profile = self._b_toroid_profile / self._b_mode * maxis_mfield_value
+                self._b_mode = maxis_mfield_value
     
         self._antennae = dict()
 
         self._warn_if_bad_maxis(r_grid, z_grid)
+        
+        if (psi_profile is not None) and (b_toroid_profile is not None) and (b_poloid_profile is not None):
+            if not psi_profile.shape == b_toroid_profile.shape == b_poloid_profile.shape:
+                raise ValueError(f"profiles have not the same shapes: {psi_profile.shape}, {b_toroid_profile.shape}, {b_poloid_profile.shape}")
+            elif psi_profile.shape[0] == psi_profile.shape[1]:
+                warnings.warn("grid is square. Be sure if axis 0 relates R-coordinate, axis 1 - Z-coodrinate.", RuntimeWarning)
 
 
-    def add_antenna(self, pos=None, view=None, resolution=None, store_as: str = None, **trace_kwargs):
+    def add_antenna(self, pos: tuple[float, float] = None, view: tuple[float, float] = None, resolution: int = None, store_as: str = None, **trace_kwargs) -> Trace:
         """
         Adds an antenna and its associated trace to the vessel.
 
         Args:
-            pos (tuple, optional): Position of the antenna in (R, Z) coordinates. 
+            pos (tuple[float, float], optional): Position of the antenna in (R, Z) coordinates. 
                 Defaults to the outer side of the vessel boundary in front of the magnetic axis.
-            view (tuple, optional): View direction of the antenna in (R, Z) coordinates. Defaults to the magnetic axis.
+            view (tuple[float, float], optional): View direction of the antenna in (R, Z) coordinates. Defaults to the magnetic axis.
             resolution (int, optional): Number of points to interpolate the trace on. Defaults to the radial grid size.
             store_as (str, optional): Name to store the antenna as. If None, the method returns the trace and forgets about it. Defaults to None.
             **trace_kwargs: Additional arguments for the `Trace` object.
@@ -475,32 +496,37 @@ class Vessel:
         """
 
         if store_as in self._antennae:
-            raise ValueError(f"An antenna with the name '{store_as}' already exists. Please choose a unique name.")
+            raise ValueError(f"An antenna with the name '{store_as}' already exists. Please choose a unique name.")      
 
-        # по дефолту луч строится в экваториальной плоскости со стороны слабого поля
-        pos        = pos        if pos        is not None else (self._vessel_shape[0].max(), self._maxis[1])
-        view       = view       if view       is not None else self._maxis
+        pos  = pos  if pos  is not None else self._default_pos
+        view = view if view is not None else self._default_view
         resolution = resolution if resolution is not None else len(self._r)
 
         self._check_view_is_ok(pos, view)
 
         trace = Trace(
-            pos, view,
-            self._r, self._z, self._psi_profile.data, 
-            self._b_toroid_profile.data, self._b_poloid_profile.data, self._b_mode,
-            resolution, **trace_kwargs
+            pos, view, 
+            self._r, self._z,
+            psi_profile=self._psi_profile.data if self._psi_profile is not None else None, 
+            b_toroid_profile=self._b_toroid_profile.data if self._b_toroid_profile is not None else None,
+            b_poloid_profile=self._b_poloid_profile.data if self._b_poloid_profile is not None else None,
+            resolution=resolution,
+            **trace_kwargs
         )
         if store_as is not None:
-            self._antennae[store_as] = Antenna(
-                store_as,
-                np.array(pos), np.array(view),
-                trace, self._maxis
-            )
+            if self.maxis is None:
+                self._antennae[store_as] = trace
+            else:
+                self._antennae[store_as] = Antenna(
+                    store_as,
+                    np.array(pos), np.array(view),
+                    trace, self._maxis
+                )
         return trace
     
 
     @classmethod
-    def from_geqdsk(cls, filepath):
+    def from_geqdsk(cls, filepath: str) -> "Vessel":
         """
         Initializes a Vessel object from a GEQDSK file.
 
@@ -541,7 +567,7 @@ class Vessel:
             )            
        
     
-    def list_antennae(self, names_only=True):
+    def list_antennae(self, names_only: bool = True):
         """
         Lists all antennas added to the vessel.
 
@@ -555,21 +581,21 @@ class Vessel:
         return self._antennae.keys() if names_only else self._antennae
     
     
-    def get_trace(self, name):
+    def get_trace(self, name: str) -> Trace:
         """
-        Retrieves an trace object by the antenna name.
+        Retrieves a trace object by the antenna name.
 
         Args:
             name (str): Name of the antenna.
 
         Returns:
-            Antenna: The antenna object.
+            Trace: The trace object.
         """
 
         return self._antennae[name].trace
     
 
-    def get_antenna(self, name):
+    def get_antenna(self, name: str) -> Antenna:
         """
         Retrieves an antenna object by name.
 
@@ -583,7 +609,7 @@ class Vessel:
         return self._antennae[name]
 
 
-    def get_psi2d(self): 
+    def get_psi2d(self) -> np.ndarray:
         """
         Returns the 2D poloidal flux profile.
 
@@ -594,7 +620,7 @@ class Vessel:
         return self._psi_profile
 
 
-    def get_b(self, which='full'):
+    def get_b(self, which: str = 'full') -> np.ndarray:
         """
         Returns the magnetic field profile.
 
@@ -613,19 +639,30 @@ class Vessel:
             return np.sqrt(self._b_toroid_profile**2 + self._b_poloid_profile**2)
         else:
             raise ValueError("argument 'which' can be one of the following: 'full'(by default), 'tor', 'pol'")
+        
+    
+    def get_bmode(self) -> float:
+        """
+        Returns the magnetic field value at the magnetic axis.
+
+        Returns:
+            float: The magnetic field value at the magnetic axis.
+        """
+
+        return self._b_mode if hasattr(self, '_b_mode') else None
     
 
-    def get_maxis(self): 
+    def get_maxis(self) -> tuple[float, float]:
         """
         Returns the coordinates of the magnetic axis.
 
         Returns:
-            tuple: Coordinates of the magnetic axis (R, Z).
+            tuple[float, float]: Coordinates of the magnetic axis (R, Z).
         """
 
         return self._maxis
 
-    def get_coords(self): 
+    def get_coords(self) -> tuple[np.ndarray, np.ndarray]:
         """
         Returns the radial and vertical coordinate grids.
 
@@ -635,7 +672,7 @@ class Vessel:
 
         return (self._r, self._z)
 
-    def get_separatrix(self):   
+    def get_separatrix(self) -> np.ndarray:
         """
         Returns the plasma separatrix.
 
@@ -645,7 +682,7 @@ class Vessel:
 
         return self._separatrix
 
-    def get_vessel_shape(self):   
+    def get_vessel_shape(self) -> np.ndarray:
         """
         Returns the vessel boundary.
 
@@ -656,22 +693,22 @@ class Vessel:
         return self._vessel_shape
 
 
-    def visualize_param_in_vessel(self, param_grid, param_name='', draw_traces=False, fig_ax=None, **contourf_kwargs):
+    def visualize_param_in_vessel(self, param_grid: np.ndarray, param_name: str = '', draw_traces=False, fig_ax=None, **contourf_kwargs):
         """
         Visualizes a parameter grid within the vessel.
 
         Args:
             param_grid (np.ndarray): The parameter grid to visualize.
-            param_name (str, optional): Name of the parameter. Defaults to None.
-            draw_traces (bool or list, optional): If True, draws all traces. If a list, draws specified traces. Defaults to False.
-            fig_ax (tuple, optional): Tuple of (figure, axis) for the plot. Defaults to None.
+            param_name (str, optional): Name of the parameter.
+            draw_traces (bool or list, optional): If True, draws all traces. If a list, draws specified traces.
+            fig_ax (tuple, optional): Tuple of (figure, axis) for the plot.
             **contourf_kwargs: Additional arguments for the contour plot.
 
         Returns:
             tuple: The figure and axis of the plot.
         """
 
-        fig, ax = plt.subplots(figsize=(6, 7), tight_layout=True) if fig_ax is None else fig_ax
+        fig, ax = plt.subplots(figsize=(6, 7)) if fig_ax is None else fig_ax
             
         contourf = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
         cbar = plt.colorbar(contourf, label=param_name)
@@ -693,8 +730,34 @@ class Vessel:
                 trace = self.get_trace(name) 
                 ax.plot(trace.r, trace.z, '--w', linewidth=2)
 
+        plt.tight_layout()
         return fig, ax
     
+
+    def _set_maxis(self, maxis: tuple):
+        """
+        Sets the magnetic axis coordinates.
+
+        Args:
+            maxis (tuple): Coordinates of the magnetic axis (R, Z).
+        """
+        self._maxis = maxis
+        if (self._maxis is None) and (self._psi_profile is not None):
+            self._maxis = np.array(np.unravel_index(self._psi_profile.argmin(), self._psi_profile.shape))
+            self._maxis = (self._r[self._maxis[0]], self._z[self._maxis[1]])
+
+
+    def _set_default_trace_edges(self):
+        """
+        Sets the default position and view for traces.
+        """
+        if (self._vessel_shape is None) or (self._maxis is None):
+            self._default_pos = (self._r.max(), self._z.mean())
+            self._default_view = (self._r.mean(), self._z.mean())
+        else:
+            self._default_pos = (self._vessel_shape[0].max(), self._maxis[1])
+            self._default_view = self._maxis
+
 
     def _create_vessel_mask(self):
         """
@@ -703,21 +766,25 @@ class Vessel:
         Returns:
             np.ndarray: Boolean mask indicating points inside the vessel.
         """
+        if self._vessel_shape is None:
+            return None
+        else:
+            r, z = np.meshgrid(self._r, self._z, indexing='ij')
+            r, z = r.flatten(), z.flatten()
+            grid = np.vstack((r, z)).T
 
-        r, z = np.meshgrid(self._r, self._z, indexing='ij')
-        r, z = r.flatten(), z.flatten()
-        grid = np.vstack((r, z)).T
+            path = Path(self._vessel_shape.T)
+            mask = path.contains_points(grid)
 
-        path = Path(self._vessel_shape.T)
-        mask = path.contains_points(grid)
-
-        return mask.reshape((len(self._r), len(self._z)))
+            return ~mask.reshape((len(self._r), len(self._z)))
     
 
     def _warn_if_bad_maxis(self, r_grid, z_grid):
         """
         Warns if the given magnetic axis does not match the axis computed with the given psi_profile.
         """
+        if self._maxis is None or self._psi_profile is None:
+            return
 
         grid_maxis_location = (self._psi_profile.argmin() // self._psi_profile.shape[1], self._psi_profile.argmin() % self._psi_profile.shape[1])
         dist_btwn_set_and_grid_maxis = ((r_grid[grid_maxis_location[0]] - self._maxis[0])**2 + (z_grid[grid_maxis_location[1]] - self._maxis[1])**2)**0.5
@@ -747,13 +814,22 @@ class Vessel:
 
 if __name__ == "__main__":
 
-    antenna = Antenna(
-        name='test_antenna',
-        pos=(2.0, 1.0), 
-        view=(1.5, 0.0),
-        trace=None,
-        maxis=(1.5, 0.0)
+    device = Vessel.from_geqdsk('eqdsk-t15.txt')
+    device.visualize_param_in_vessel(
+        device.get_psi2d(), 
+        param_name='Normalized poloidal flux', 
+        draw_traces=True, 
+        cmap='plasma', 
+        levels=100
     )
-    print(np.degrees(antenna.rotated_by))
-    print(antenna.xy2rz((np.cos(np.pi / 6), np.sin(np.pi / 6))))
-    print(antenna.rz2xy((1.5, 1.0)))
+    plt.show()
+    # antenna = Antenna(
+    #     name='test_antenna',
+    #     pos=(2.0, 1.0), 
+    #     view=(1.5, 0.0),
+    #     trace=None,
+    #     maxis=(1.5, 0.0)
+    # )
+    # print(np.degrees(antenna.rotated_by))
+    # print(antenna.xy2rz((np.cos(np.pi / 6), np.sin(np.pi / 6))))
+    # print(antenna.rz2xy((1.5, 1.0)))

@@ -1,6 +1,6 @@
 [project]
 name = "vessel"
-version = "3.0.0"
+version = "3.0.1"
 description = "A library for interpolating plasma parameters to a given diagnostic linear beam"
 authors = [
     { name="Artyom Loginov", email="loginov.atrtem@phystech.edu" }
