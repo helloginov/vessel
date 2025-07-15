@@ -10,7 +10,7 @@ try:
     from freeqdsk import geqdsk 
 except ImportError as e:
     raise ImportError(
-        "The 'freeqdsk-0.5.0' library is required but not installed. "
+        "The 'freeqdsk>=0.5.0' library is required but not installed. "
         "Please install it from https://github.com/freegs-plasma/FreeQDSK?tab=readme-ov-file"
     ) from e
 # docs: https://freeqdsk.readthedocs.io/en/stable/geqdsk.html
@@ -514,7 +514,7 @@ class Vessel:
             **trace_kwargs
         )
         if store_as is not None:
-            if self.maxis is None:
+            if self._maxis is None:
                 self._antennae[store_as] = trace
             else:
                 self._antennae[store_as] = Antenna(
@@ -562,7 +562,7 @@ class Vessel:
             maxis_mfield_value=eqdsk.bcentr,
             b_toroid_profile=b_tor,
             b_poloid_profile=b_pol,
-            vessel_shape=np.vstack((eqdsk.rlim, eqdsk.zlim)) / 100, # / 100 only for T-15MD.eqdsk
+            vessel_shape=np.vstack((eqdsk.rlim, eqdsk.zlim)),
             separatrix=np.vstack((eqdsk.rbdry, eqdsk.zbdry))
             )            
        
@@ -795,7 +795,7 @@ class Vessel:
                           category=RuntimeWarning)
             
 
-    def _check_view_is_ok(self, antenna, view):
+    def _check_view_is_ok(self, pos, view):
         """
         Checks if the beam is directed towards the magnetic axis.
 
@@ -806,8 +806,8 @@ class Vessel:
         Raises:
             Warning: If the beam is directed away from the magnetic axis.
         """
-        view = np.array(view) - (a := np.array(antenna))
-        maxis_line = np.array(self._maxis) - a
+        view = np.array(view) - (pos := np.array(pos))
+        maxis_line = np.array(self._maxis) - pos
         if view @ maxis_line <= 0:
             warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {antenna}, view: {view}\nmaxis: {self.get_maxis()}')
 
