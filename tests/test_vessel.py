@@ -1,5 +1,8 @@
 import unittest
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+
 from vessel import Vessel, Trace
 
 class TestVessel(unittest.TestCase):

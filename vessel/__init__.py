@@ -465,7 +465,7 @@ class Vessel:
                 method='linear'
             )
             if maxis_mfield_value is not None:
-                self._b_toroid_profile = self._b_toroid_profile / self._b_mode * maxis_mfield_value
+                self._b_toroid_profile.data[...] *= (self._b_mode / maxis_mfield_value)
                 self._b_mode = maxis_mfield_value
     
         self._antennae = dict()
@@ -562,7 +562,7 @@ class Vessel:
             maxis_mfield_value=eqdsk.bcentr,
             b_toroid_profile=b_tor,
             b_poloid_profile=b_pol,
-            vessel_shape=np.vstack((eqdsk.rlim, eqdsk.zlim)),
+            vessel_shape=np.vstack((eqdsk.rlim, eqdsk.zlim)) / 100,
             separatrix=np.vstack((eqdsk.rbdry, eqdsk.zbdry))
             )            
        
@@ -809,27 +809,8 @@ class Vessel:
         view = np.array(view) - (pos := np.array(pos))
         maxis_line = np.array(self._maxis) - pos
         if view @ maxis_line <= 0:
-            warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {antenna}, view: {view}\nmaxis: {self.get_maxis()}')
+            warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {pos}, view: {view}\nmaxis: {self.get_maxis()}')
 
 
 if __name__ == "__main__":
-
-    device = Vessel.from_geqdsk('eqdsk-t15.txt')
-    device.visualize_param_in_vessel(
-        device.get_psi2d(), 
-        param_name='Normalized poloidal flux', 
-        draw_traces=True, 
-        cmap='plasma', 
-        levels=100
-    )
-    plt.show()
-    # antenna = Antenna(
-    #     name='test_antenna',
-    #     pos=(2.0, 1.0), 
-    #     view=(1.5, 0.0),
-    #     trace=None,
-    #     maxis=(1.5, 0.0)
-    # )
-    # print(np.degrees(antenna.rotated_by))
-    # print(antenna.xy2rz((np.cos(np.pi / 6), np.sin(np.pi / 6))))
-    # print(antenna.rz2xy((1.5, 1.0)))
+    pass
