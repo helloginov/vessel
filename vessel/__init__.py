@@ -21,7 +21,7 @@ class Trace:
     Represents a diagnostic trace in a tokamak vessel poloidal cut.
 
     The `Trace` class models a cross-section of the tokamak chamber as a straight line 
-    between two points (antenna and view). It provides methods for interpolating 
+    between two points (antenna and to). It provides methods for interpolating 
     magnetic field and poloidal flux (psi) profiles and calculating angles to magnetic surfaces.
 
     Attributes:
@@ -35,18 +35,18 @@ class Trace:
     """
 
     def __init__(
-            self, pos: tuple[float, float], view: tuple[float, float],
+            self, loc: tuple[float, float], to: tuple[float, float],
             r_grid: np.ndarray, z_grid: np.ndarray,
             psi_profile: np.ndarray = None, b_toroid_profile: np.ndarray = None, b_poloid_profile: np.ndarray = None,
             resolution: int = 100, need_b: bool = True, need_angle: bool = True, need_dist: bool = True, crop_tail: bool = True
         ):
         """
-        Creates a cross-section of the chamber as a straight line between two points: antenna and view.
+        Creates a cross-section of the chamber as a straight line between two points: antenna and to.
         The cross-section is described by the attributes r, z, dist, psi, b_tor, b_pol, reflection_angle.
 
         Args:
-            pos (tuple[float, float]): Initial point of the trace in (R, Z) coordinates.
-            view (tuple[float, float]): Any (R, Z) point in the cut, defining the view of the trace.
+            loc (tuple[float, float]): Initial point of the trace in (R, Z) coordinates.
+            to (tuple[float, float]): Any (R, Z) point in the cut, defining the to of the trace.
             r_grid (np.ndarray): 1D array of radial coordinates.
             z_grid (np.ndarray): 1D array of vertical coordinates.
             psi_profile (np.ndarray, optional): 2D array of poloidal magnetic flux, shape (len(r_grid), len(z_grid)).
@@ -62,8 +62,8 @@ class Trace:
         R_2Dgrid, Z_2Dgrid = np.meshgrid(r_grid, z_grid, indexing='ij')
 
         # задание луча в координатах (R, Z)                 с запасом в двое длиннее
-        self._r = np.linspace(pos[0], view[0], resolution)
-        self._z = np.linspace(pos[1], view[1], resolution)
+        self._r = np.linspace(loc[0], to[0], resolution)
+        self._z = np.linspace(loc[1], to[1], resolution)
 
         # проверка на выход за границы сетки: если луч выходит по какой-то координате за допустимые пределы, то строим новый луч до границы.
         inlying_part = np.argwhere(((self._r > R_2Dgrid[0, 0]) & (self._r < R_2Dgrid[-1, 0]) & (self._z > Z_2Dgrid[0, 0]) & (self._z < Z_2Dgrid[0, -1])))
@@ -72,8 +72,8 @@ class Trace:
             end_idx = np.array(inlying_part[-1]).item() # inlying_part[-1] может оказаться скаляром, а может массивом с 1 элементом
 
             if end_idx != len(self._r) - 1:
-                self._r = np.linspace(pos[0], self._r[end_idx], resolution)
-                self._z = np.linspace(pos[1], self._z[end_idx], resolution)
+                self._r = np.linspace(loc[0], self._r[end_idx], resolution)
+                self._z = np.linspace(loc[1], self._z[end_idx], resolution)
 
         # интерполяция двумерного распределения полоидального потока на направление зондирования
         if psi_profile is not None:
@@ -88,7 +88,7 @@ class Trace:
 
         # задание луча в кординатах расстояния от антенны
         if need_dist:
-            self._dist = np.sqrt((self._r - pos[0])**2 + (self._z - pos[1])**2)
+            self._dist = np.sqrt((self._r - loc[0])**2 + (self._z - loc[1])**2)
 
         # интерполяция двумерных распределений тороидального и полоидального полей на направление зондирования
         if need_b:
@@ -236,45 +236,45 @@ class Antenna:
     """
     Represents an antenna in a tokamak vessel.
 
-    The `Antenna` class models the position, view direction, and associated trace 
+    The `Antenna` class models the location, to direction, and associated trace 
     of an antenna. It provides methods for coordinate transformations and accessing 
     antenna properties.
 
     Attributes:
         name (str): The name of the antenna.
-        pos (tuple): The position of the antenna in (R, Z) coordinates.
-        view (tuple): The view direction of the antenna in (R, Z) coordinates.
+        loc (tuple[float, float]): The location of the antenna in (R, Z) coordinates.
+        to (tuple[float, float]): The direction point of the antenna in (R, Z) coordinates.
         trace (Trace): The trace object associated with the antenna.
         rad (float): Distance of the antenna from the magnetic axis.
         rotated_by (float): Angle by which the antenna is rotated relative to the horizon.
     """
 
-    def __init__(self, name: str, pos: tuple[float, float], view: tuple[float, float], trace: Trace, maxis: tuple[float, float]):
+    def __init__(self, name: str, loc: tuple[float, float], to: tuple[float, float], trace: Trace, maxis: tuple[float, float]):
         """
         Initializes an Antenna object.
 
         Args:
             name (str): The name of the antenna.
-            pos (tuple[float, float]): The position of the antenna in (R, Z) coordinates.
-            view (tuple[float, float]): The view direction of the antenna in (R, Z) coordinates.
+            loc (tuple[float, float]): The location of the antenna in (R, Z) coordinates.
+            to (tuple[float, float]): The direction point of the antenna in (R, Z) coordinates.
             trace (Trace): The trace object associated with the antenna.
-            maxis (tuple[float, float]): The position of the magnetic axis in (R, Z) coordinates.
+            maxis (tuple[float, float]): The location of the magnetic axis in (R, Z) coordinates.
 
         Raises:
-            ValueError: If `pos`, `view`, or `maxis` are not 2D points.
+            ValueError: If `loc`, `to`, or `maxis` are not 2D points.
         """
 
-        if len(pos) != 2 or len(view) != 2 or len(maxis) != 2:
-            raise ValueError("Arguments 'pos', 'view', and 'maxis' must be 2D points (tuples or arrays of length 2).")
+        if len(loc) != 2 or len(to) != 2 or len(maxis) != 2:
+            raise ValueError("Arguments 'loc', 'to', and 'maxis' must be 2D points (tuples or arrays of length 2).")
 
         self.name = name
-        self._pos = np.array(pos)
-        self._view = np.array(view)
+        self._loc = np.asarray(loc)
+        self._to = np.asarray(to)
         self._trace = trace
 
         self._maxis = np.array(maxis)
 
-        ex = self._pos - self._maxis
+        ex = self._loc - self._maxis
         self._rad = np.linalg.norm(ex)
 
         ex /= self._rad
@@ -348,32 +348,32 @@ class Antenna:
         return self._rotated_by
     
     
-    def get_pos(self, coords='rz'):
+    def get_loc(self, coords='rz'):
         """
-        Returns the position of the antenna in the specified coordinate system.
+        Returns the location of the antenna in the specified coordinate system.
 
         Args:
             coords (str): Coordinate system: 'xy' for Cartesian, 'rz' for cylindrical. Defaults to 'rz'.
 
         Returns:
-            np.ndarray: Position in the specified coordinate system.
+            np.ndarray: location in the specified coordinate system.
         """
 
-        return self.adjust_coords(self._pos, coords)
+        return self.adjust_coords(self._loc, coords)
     
 
-    def get_view(self, coords='rz'):
+    def where(self, coords='rz'):
         """
-        Returns the view direction of the antenna in the specified coordinate system.
+        Returns the to direction of the antenna in the specified coordinate system.
 
         Args:
             coords (str): Coordinate system: 'xy' for Cartesian, 'rz' for cylindrical. Defaults to 'rz'.
 
         Returns:
-            np.ndarray: View direction in the specified coordinate system.
+            np.ndarray: to direction in the specified coordinate system.
         """
 
-        return self.adjust_coords(self._view, coords)
+        return self.adjust_coords(self._to, coords)
     
     
     def adjust_coords(self, point, coords: str = 'rz') -> np.ndarray:
@@ -404,7 +404,7 @@ class Vessel:
     Represents the geometry, magnetic field profiles, and plasma configuration of a tokamak vessel.
 
     The `Vessel` class provides a comprehensive representation of a tokamak's equilibrium 
-    for reflectometry purposes. It allows for the addition of antennas and traces, 
+    for reflectometry purloces. It allows for the addition of antennas and traces, 
     visualization of parameters within the vessel, and parsing gEQDSK files for initialization.
 
     Attributes:
@@ -452,20 +452,20 @@ class Vessel:
 
         self._psi_profile = ma.array(psi_profile, mask=vessel_mask) if psi_profile is not None else None
         self._b_poloid_profile = ma.array(b_poloid_profile, mask=vessel_mask) if b_poloid_profile is not None else None
-        self._b_toroid_profile = ma.array(b_toroid_profile, mask=vessel_mask) if b_toroid_profile is not None else None
+        self._b_toroid_profile = None
 
         self._set_maxis(maxis)
         self._set_default_trace_edges()
 
-        if self._b_toroid_profile is not None and self._maxis is not None:
+        if b_toroid_profile is not None and self._maxis is not None:
             self._b_mode = interpn(
                 points=(self._r, self._z),
-                values=self._b_toroid_profile,
+                values=b_toroid_profile,
                 xi=self._maxis,
                 method='linear'
             )
             if maxis_mfield_value is not None:
-                self._b_toroid_profile.data[...] *= (self._b_mode / maxis_mfield_value)
+                self._b_toroid_profile = ma.array(b_toroid_profile * (self._b_mode / maxis_mfield_value), mask=vessel_mask)
                 self._b_mode = maxis_mfield_value
     
         self._antennae = dict()
@@ -479,14 +479,14 @@ class Vessel:
                 warnings.warn("grid is square. Be sure if axis 0 relates R-coordinate, axis 1 - Z-coodrinate.", RuntimeWarning)
 
 
-    def add_antenna(self, pos: tuple[float, float] = None, view: tuple[float, float] = None, resolution: int = None, store_as: str = None, **trace_kwargs) -> Trace:
+    def add_antenna(self, loc: tuple[float, float] = None, to: tuple[float, float] = None, resolution: int = None, store_as: str = None, **trace_kwargs) -> Trace:
         """
         Adds an antenna and its associated trace to the vessel.
 
         Args:
-            pos (tuple[float, float], optional): Position of the antenna in (R, Z) coordinates. 
+            loc (tuple[float, float], optional): location of the antenna in (R, Z) coordinates. 
                 Defaults to the outer side of the vessel boundary in front of the magnetic axis.
-            view (tuple[float, float], optional): View direction of the antenna in (R, Z) coordinates. Defaults to the magnetic axis.
+            to (tuple[float, float], optional): direction point of the antenna in (R, Z) coordinates. Defaults to the magnetic axis.
             resolution (int, optional): Number of points to interpolate the trace on. Defaults to the radial grid size.
             store_as (str, optional): Name to store the antenna as. If None, the method returns the trace and forgets about it. Defaults to None.
             **trace_kwargs: Additional arguments for the `Trace` object.
@@ -498,14 +498,14 @@ class Vessel:
         if store_as in self._antennae:
             raise ValueError(f"An antenna with the name '{store_as}' already exists. Please choose a unique name.")      
 
-        pos  = pos  if pos  is not None else self._default_pos
-        view = view if view is not None else self._default_view
+        loc  = loc  if loc  is not None else self._default_loc
+        to = to if to is not None else self._default_to
         resolution = resolution if resolution is not None else len(self._r)
 
-        self._check_view_is_ok(pos, view)
+        self._check_view_is_ok(loc, to)
 
         trace = Trace(
-            pos, view, 
+            loc, to, 
             self._r, self._z,
             psi_profile=self._psi_profile.data if self._psi_profile is not None else None, 
             b_toroid_profile=self._b_toroid_profile.data if self._b_toroid_profile is not None else None,
@@ -519,7 +519,7 @@ class Vessel:
             else:
                 self._antennae[store_as] = Antenna(
                     store_as,
-                    np.array(pos), np.array(view),
+                    np.asarray(loc), np.asarray(to),
                     trace, self._maxis
                 )
         return trace
@@ -749,14 +749,14 @@ class Vessel:
 
     def _set_default_trace_edges(self):
         """
-        Sets the default position and view for traces.
+        Sets the default location and to for traces.
         """
         if (self._vessel_shape is None) or (self._maxis is None):
-            self._default_pos = (self._r.max(), self._z.mean())
-            self._default_view = (self._r.mean(), self._z.mean())
+            self._default_loc = (self._r.max(), self._z.mean())
+            self._default_to = (self._r.mean(), self._z.mean())
         else:
-            self._default_pos = (self._vessel_shape[0].max(), self._maxis[1])
-            self._default_view = self._maxis
+            self._default_loc = (self._vessel_shape[0].max(), self._maxis[1])
+            self._default_to = self._maxis
 
 
     def _create_vessel_mask(self):
@@ -795,21 +795,21 @@ class Vessel:
                           category=RuntimeWarning)
             
 
-    def _check_view_is_ok(self, pos, view):
+    def _check_view_is_ok(self, loc: tuple[float, float], to: tuple[float, float]):
         """
         Checks if the beam is directed towards the magnetic axis.
 
         Args:
-            antenna (tuple): Position of the antenna.
-            view (tuple): View direction of the antenna.
+            loc (tuple[float, float]): location of the antenna.
+            to (tuple[float, float]): direction point of the antenna.
 
         Raises:
             Warning: If the beam is directed away from the magnetic axis.
         """
-        view = np.array(view) - (pos := np.array(pos))
-        maxis_line = np.array(self._maxis) - pos
+        view = np.array(to) - (loc := np.array(loc))
+        maxis_line = np.array(self._maxis) - loc
         if view @ maxis_line <= 0:
-            warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {pos}, view: {view}\nmaxis: {self.get_maxis()}')
+            warnings.warn(f'The beam is directed away from the magnetic axis:\nantenna: {loc}, to: {to}\nmaxis: {self.get_maxis()}')
 
 
 if __name__ == "__main__":
