@@ -167,7 +167,7 @@ class Trace:
         self.cut(condition=(np.arange(len(self._r)) <= end_idx), inplace=True)
             
     
-    def interpolate_on_trace(self, r_grid: np.ndarray, z_grid: np.ndarray, profile2d: np.ndarray, method: str = "linear") -> np.ndarray:
+    def interpolate_on_trace(self, r_grid: np.ndarray, z_grid: np.ndarray, profile2d: np.ndarray, method: str = "splinef2d") -> np.ndarray:
         """
         Interpolates a 2D profile along the trace.
 
