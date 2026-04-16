@@ -693,7 +693,7 @@ class Vessel:
         return self._vessel_shape
 
 
-    def visualize_param_in_vessel(self, param_grid: np.ndarray, param_name: str = '', draw_traces=False, fig_ax=None, **contourf_kwargs):
+    def visualize_param_in_vessel(self, param_grid: np.ndarray, param_name: str = '', draw_traces=False, fig_ax=None, no_cbar=False, **contourf_kwargs):
         """
         Visualizes a parameter grid within the vessel.
 
@@ -711,7 +711,8 @@ class Vessel:
         fig, ax = plt.subplots(figsize=(6, 7)) if fig_ax is None else fig_ax
             
         contourf = ax.contourf(*np.meshgrid(self._r, self._z, indexing='ij'), param_grid, **contourf_kwargs)
-        cbar = plt.colorbar(contourf, label=param_name)
+        if not no_cbar:
+            cbar = plt.colorbar(contourf, label=param_name)
 
         if self._separatrix is not None:
             ax.plot(self._separatrix[0], self._separatrix[1], color="m", label="Сепаратриса", linewidth=3)
